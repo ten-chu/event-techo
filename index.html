@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>イベント手帳</title>
+<style>
+  :root {
+    --bg: #F7F5F0;
+    --surface: #FFFFFF;
+    --surface2: #F0EDE6;
+    --accent: #3D6B4F;
+    --accent-light: #EAF2EC;
+    --accent-dark: #2A4F38;
+    --text: #1A1A18;
+    --text2: #5A5A54;
+    --text3: #9A9A90;
+    --border: rgba(0,0,0,0.08);
+    --border2: rgba(0,0,0,0.14);
+    --red: #C0392B;
+    --red-light: #FDECEA;
+    --amber: #B7650A;
+    --amber-light: #FDF3E3;
+    --radius: 14px;
+    --radius-sm: 8px;
+    --shadow: 0 2px 12px rgba(0,0,0,0.07);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, "Hiragino Sans", "Yu Gothic UI", sans-serif; min-height: 100dvh; overscroll-behavior: none; }
+
+  /* ── ヘッダー ── */
+  .header { position: sticky; top: 0; z-index: 100; background: var(--bg); padding: 16px 16px 0; }
+  .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .app-title { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; color: var(--accent-dark); }
+  .app-title span { color: var(--accent); }
+  .btn-add { background: var(--accent); color: #fff; border: none; border-radius: 50px; padding: 8px 18px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: background 0.15s; }
+  .btn-add:active { background: var(--accent-dark); }
+
+  /* タブ */
+  .tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding-bottom: 1px; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { white-space: nowrap; padding: 7px 14px; border-radius: 50px; font-size: 13px; font-weight: 500; border: none; background: transparent; color: var(--text2); cursor: pointer; transition: all 0.15s; }
+  .tab.active { background: var(--accent); color: #fff; }
+  .tab-divider { width: 100%; height: 1px; background: var(--border2); margin-top: 12px; }
+
+  /* ── リスト ── */
+  .main { padding: 14px 16px 100px; }
+  .section-label { font-size: 11px; font-weight: 600; color: var(--text3); letter-spacing: 0.08em; text-transform: uppercase; margin: 16px 0 8px; }
+
+  /* カード */
+  .card { background: var(--surface); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; box-shadow: var(--shadow); border: 0.5px solid var(--border); cursor: pointer; transition: transform 0.12s, box-shadow 0.12s; position: relative; overflow: hidden; }
+  .card:active { transform: scale(0.985); box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
+  .card-accent-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 2px 0 0 2px; }
+  .card.upcoming .card-accent-bar { background: var(--accent); }
+  .card.today .card-accent-bar { background: #E8A020; }
+  .card.ended .card-accent-bar { background: var(--border2); }
+  .card.attended .card-accent-bar { background: #8BC4A0; }
+  .card-inner { padding-left: 12px; }
+  .card-title { font-size: 15px; font-weight: 600; line-height: 1.4; margin-bottom: 6px; color: var(--text); }
+  .card.ended .card-title { color: var(--text3); }
+  .card-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+  .meta-chip { display: flex; align-items: center; gap: 3px; font-size: 12px; color: var(--text2); }
+  .meta-chip svg { opacity: 0.5; }
+  .badge { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 50px; }
+  .badge-today { background: #FDF3E3; color: #B7650A; }
+  .badge-soon { background: var(--accent-light); color: var(--accent-dark); }
+  .badge-ended { background: var(--surface2); color: var(--text3); }
+  .badge-attended { background: #EAF2EC; color: #2A6B45; }
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+
+  /* 空状態 */
+  .empty { text-align: center; padding: 60px 24px; }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.3; }
+  .empty-text { font-size: 15px; color: var(--text3); line-height: 1.6; }
+
+  /* ── モーダル共通 ── */
+  .overlay { display: none; position: fixed; inset: 0; z-index: 200; }
+  .overlay.open { display: flex; flex-direction: column; }
+  .overlay-bg { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
+  .sheet { position: relative; z-index: 1; background: var(--surface); border-radius: 20px 20px 0 0; margin-top: auto; max-height: 92dvh; overflow-y: auto; overscroll-behavior: contain; }
+  .sheet-handle { width: 36px; height: 4px; background: var(--border2); border-radius: 2px; margin: 12px auto 0; }
+  .sheet-header { padding: 16px 20px 0; display: flex; justify-content: space-between; align-items: center; }
+  .sheet-title { font-size: 17px; font-weight: 700; }
+  .btn-close { background: var(--surface2); border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text2); font-size: 18px; }
+  .sheet-body { padding: 16px 20px 32px; }
+
+  /* フォーム */
+  .form-section { margin-bottom: 20px; }
+  .form-label { font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 6px; display: block; letter-spacing: 0.04em; }
+  .form-input { width: 100%; padding: 11px 14px; border: 1.5px solid var(--border2); border-radius: var(--radius-sm); font-size: 15px; font-family: inherit; background: var(--surface); color: var(--text); outline: none; transition: border-color 0.15s; }
+  .form-input:focus { border-color: var(--accent); }
+  textarea.form-input { resize: vertical; min-height: 90px; line-height: 1.6; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .input-group { display: flex; gap: 8px; }
+  .input-group .form-input { flex: 1; }
+  .btn-extract { background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm); padding: 11px 16px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background 0.15s; }
+  .btn-extract:active { background: var(--accent-dark); }
+  .btn-extract:disabled { background: var(--text3); cursor: not-allowed; }
+  .extract-hint { font-size: 12px; color: var(--text3); margin-top: 6px; }
+  .divider-or { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--text3); font-size: 12px; }
+  .divider-or::before, .divider-or::after { content: ""; flex: 1; height: 1px; background: var(--border2); }
+  .ai-status { font-size: 13px; padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 14px; }
+  .ai-status.loading { background: var(--accent-light); color: var(--accent-dark); }
+  .ai-status.error { background: var(--red-light); color: var(--red); }
+  .ai-status.success { background: #EAF2EC; color: #2A6B45; }
+  .btn-primary { width: 100%; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm); padding: 14px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 8px; transition: background 0.15s; }
+  .btn-primary:active { background: var(--accent-dark); }
+  .btn-secondary { width: 100%; background: transparent; color: var(--red); border: 1.5px solid var(--red); border-radius: var(--radius-sm); padding: 12px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+
+  /* 詳細シート */
+  .detail-hero { background: var(--accent-light); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 16px; }
+  .detail-title { font-size: 18px; font-weight: 700; line-height: 1.4; margin-bottom: 10px; }
+  .detail-metas { display: flex; flex-direction: column; gap: 6px; }
+  .detail-meta { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; color: var(--text2); }
+  .detail-meta-icon { margin-top: 1px; flex-shrink: 0; color: var(--accent); }
+  .detail-section { margin-bottom: 16px; }
+  .detail-section-label { font-size: 11px; font-weight: 600; color: var(--text3); letter-spacing: 0.08em; margin-bottom: 8px; }
+  .status-btns { display: flex; gap: 8px; }
+  .status-btn { flex: 1; padding: 10px; border-radius: var(--radius-sm); border: 1.5px solid var(--border2); background: var(--surface); font-size: 13px; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s; color: var(--text2); }
+  .status-btn.active-want { border-color: var(--accent); background: var(--accent-light); color: var(--accent-dark); }
+  .status-btn.active-attended { border-color: #2A6B45; background: #EAF2EC; color: #2A6B45; }
+  .url-link { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--accent); text-decoration: none; padding: 10px 14px; background: var(--accent-light); border-radius: var(--radius-sm); }
+  .memo-display { font-size: 14px; color: var(--text2); line-height: 1.7; white-space: pre-wrap; }
+
+  /* API設定 */
+  .api-warning { background: var(--amber-light); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px; color: var(--amber); margin-bottom: 16px; line-height: 1.6; }
+  .api-link { color: var(--accent); text-decoration: underline; }
+
+  /* ── ボトムナビ風 追加ボタン ── */
+  .fab { display: none; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div class="app-title">イベント<span>手帳</span></div>
+    <button class="btn-add" onclick="openAdd()">＋ 追加</button>
+  </div>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('upcoming')">予定中</button>
+    <button class="tab" onclick="switchTab('attended')">参加済み</button>
+    <button class="tab" onclick="switchTab('all')">すべて</button>
+  </div>
+  <div class="tab-divider"></div>
+</div>
+
+<div class="main" id="eventList"></div>
+
+<!-- ── 追加シート ── -->
+<div class="overlay" id="addSheet">
+  <div class="overlay-bg" onclick="closeAdd()"></div>
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div class="sheet-title">イベントを追加</div>
+      <button class="btn-close" onclick="closeAdd()">✕</button>
+    </div>
+    <div class="sheet-body">
+      <!-- API Key設定 -->
+      <div id="apiWarning" class="api-warning" style="display:none">
+        ⚡ Gemini APIキーが設定されていません。<br>
+        <a class="api-link" href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> で無料取得後、下に入力してください（ブラウザに保存されます）。
+        <div style="margin-top:8px">
+          <input class="form-input" id="apiKeyInput" type="password" placeholder="AIzaSy..." style="font-size:13px; padding:8px 10px;">
+          <button class="btn-extract" onclick="saveApiKey()" style="margin-top:6px; width:100%; border-radius:6px; padding:9px;">保存</button>
+        </div>
+      </div>
+
+      <!-- URL入力 -->
+      <div class="form-section">
+        <label class="form-label">URLから自動入力</label>
+        <div class="input-group">
+          <input class="form-input" id="urlInput" type="url" placeholder="https://event.example.com/..." >
+          <button class="btn-extract" id="extractBtn" onclick="extractFromUrl()">AI抽出</button>
+        </div>
+        <div class="extract-hint">URLを貼って「AI抽出」を押すと情報を自動入力</div>
+      </div>
+
+      <div class="divider-or">または テキストを貼り付け</div>
+
+      <div class="form-section">
+        <label class="form-label">テキストから自動入力</label>
+        <div class="input-group">
+          <textarea class="form-input" id="textInput" placeholder="チラシやSNSのテキストをここに貼り付け..." style="min-height:70px"></textarea>
+        </div>
+        <button class="btn-extract" id="extractTextBtn" onclick="extractFromText()" style="margin-top:8px; width:100%; border-radius:8px; padding:11px 14px;">テキストからAI抽出</button>
+      </div>
+
+      <div id="aiStatus" style="display:none" class="ai-status"></div>
+
+      <div class="divider-or">イベント情報</div>
+
+      <div class="form-section">
+        <label class="form-label">イベント名 *</label>
+        <input class="form-input" id="f_title" type="text" placeholder="例：渋谷アート展2025">
+      </div>
+      <div class="form-section">
+        <label class="form-label">開催日（開始）</label>
+        <input class="form-input" id="f_startDate" type="date">
+      </div>
+      <div class="form-section">
+        <label class="form-label">開催日（終了）※期間がある場合</label>
+        <input class="form-input" id="f_endDate" type="date">
+      </div>
+      <div class="form-section">
+        <label class="form-label">開催場所</label>
+        <input class="form-input" id="f_location" type="text" placeholder="例：渋谷区文化総合センター">
+      </div>
+      <div class="form-section">
+        <label class="form-label">主催者・料金（任意）</label>
+        <input class="form-input" id="f_organizer" type="text" placeholder="例：〇〇実行委員会 / 入場無料">
+      </div>
+      <div class="form-section">
+        <label class="form-label">メモ（任意）</label>
+        <textarea class="form-input" id="f_memo" placeholder="気になった点、行く理由など..."></textarea>
+      </div>
+      <div class="form-section">
+        <label class="form-label">URL（任意）</label>
+        <input class="form-input" id="f_url" type="url" placeholder="https://...">
+      </div>
+
+      <button class="btn-primary" onclick="saveEvent()">登録する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 詳細シート ── -->
+<div class="overlay" id="detailSheet">
+  <div class="overlay-bg" onclick="closeDetail()"></div>
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div class="sheet-title">イベント詳細</div>
+      <button class="btn-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div class="sheet-body" id="detailBody"></div>
+  </div>
+</div>
+
+<script>
+// ── データ管理 ──
+const STORAGE_KEY = 'event-techo-v1';
+const API_KEY_STORAGE = 'gemini-api-key';
+let events = [];
+let currentTab = 'upcoming';
+let editingId = null;
+
+function load() {
+  try { events = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { events = []; }
+}
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+}
+function getApiKey() { return localStorage.getItem(API_KEY_STORAGE) || ''; }
+function saveApiKey() {
+  const k = document.getElementById('apiKeyInput').value.trim();
+  if (!k) return;
+  localStorage.setItem(API_KEY_STORAGE, k);
+  document.getElementById('apiWarning').style.display = 'none';
+  showStatus('APIキーを保存しました', 'success');
+}
+
+// ── 日付ユーティリティ ──
+function toDate(s) { return s ? new Date(s + 'T00:00:00') : null; }
+function today() { return new Date(new Date().toDateString()); }
+function fmtDate(s) {
+  if (!s) return '';
+  const d = toDate(s);
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+}
+function isEnded(ev) {
+  const end = toDate(ev.endDate || ev.startDate);
+  return end && end < today();
+}
+function isToday(ev) {
+  const start = toDate(ev.startDate);
+  const end = toDate(ev.endDate || ev.startDate);
+  const t = today();
+  return start && start <= t && end >= t;
+}
+
+// ── 表示 ──
+function render() {
+  const list = document.getElementById('eventList');
+  let filtered;
+  const upcoming = events.filter(e => e.status !== 'attended' && !isEnded(e));
+  const attended = events.filter(e => e.status === 'attended');
+  const ended = events.filter(e => e.status !== 'attended' && isEnded(e));
+
+  upcoming.sort((a,b) => (a.startDate||'9') < (b.startDate||'9') ? -1 : 1);
+  attended.sort((a,b) => (b.attendedDate||b.startDate||'') < (a.attendedDate||a.startDate||'') ? -1 : 1);
+
+  if (currentTab === 'upcoming') {
+    filtered = { '': upcoming, '終了したイベント': ended };
+  } else if (currentTab === 'attended') {
+    filtered = { '': attended };
+  } else {
+    filtered = { '予定中': upcoming, '参加済み': attended, '終了': ended };
+  }
+
+  let html = '';
+  for (const [label, evs] of Object.entries(filtered)) {
+    if (label) html += `<div class="section-label">${label}</div>`;
+    if (evs.length === 0 && label === '') {
+      if (currentTab === 'upcoming') html += `<div class="empty"><div class="empty-icon">📅</div><div class="empty-text">気になるイベントを追加しましょう<br>右上の「＋ 追加」から登録できます</div></div>`;
+      else if (currentTab === 'attended') html += `<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">参加したイベントを記録しましょう<br>イベントを開いて「参加済みにする」を押してください</div></div>`;
+    }
+    for (const ev of evs) {
+      const ended_class = isEnded(ev) ? 'ended' : ev.status === 'attended' ? 'attended' : isToday(ev) ? 'today' : 'upcoming';
+      let badge = '';
+      if (ev.status === 'attended') badge = `<span class="badge badge-attended">✓ 参加済み</span>`;
+      else if (isToday(ev)) badge = `<span class="badge badge-today">📍 開催中</span>`;
+      else if (!isEnded(ev) && ev.startDate && (toDate(ev.startDate) - today()) < 7 * 86400000) badge = `<span class="badge badge-soon">まもなく</span>`;
+      else if (isEnded(ev)) badge = `<span class="badge badge-ended">終了</span>`;
+
+      const dateStr = ev.startDate ? (ev.endDate && ev.endDate !== ev.startDate ? `${fmtDate(ev.startDate)}〜${fmtDate(ev.endDate)}` : fmtDate(ev.startDate)) : '日時未定';
+      html += `<div class="card ${ended_class}" onclick="openDetail('${ev.id}')">
+        <div class="card-accent-bar"></div>
+        <div class="card-inner">
+          <div class="card-top">
+            <div class="card-title">${escHtml(ev.title)}</div>
+            ${badge}
+          </div>
+          <div class="card-meta">
+            <div class="meta-chip">${svgCal()} ${dateStr}</div>
+            ${ev.location ? `<div class="meta-chip">${svgPin()} ${escHtml(ev.location)}</div>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }
+  }
+  list.innerHTML = html;
+}
+
+function escHtml(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+function svgCal() { return `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="12" rx="2"/><path d="M5 1v4M11 1v4M2 7h12"/></svg>`; }
+function svgPin() { return `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5C5.79 1.5 4 3.29 4 5.5c0 3.25 4 9 4 9s4-5.75 4-9c0-2.21-1.79-4-4-4z"/><circle cx="8" cy="5.5" r="1.5"/></svg>`; }
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['upcoming','attended','all'][i] === tab));
+  render();
+}
+
+// ── 追加シート ──
+function openAdd(prefill = null) {
+  editingId = prefill ? prefill.id : null;
+  clearForm();
+  if (prefill) {
+    document.getElementById('f_title').value = prefill.title || '';
+    document.getElementById('f_startDate').value = prefill.startDate || '';
+    document.getElementById('f_endDate').value = prefill.endDate || '';
+    document.getElementById('f_location').value = prefill.location || '';
+    document.getElementById('f_organizer').value = prefill.organizer || '';
+    document.getElementById('f_memo').value = prefill.memo || '';
+    document.getElementById('f_url').value = prefill.url || '';
+  }
+  const hasKey = !!getApiKey();
+  document.getElementById('apiWarning').style.display = hasKey ? 'none' : 'block';
+  document.getElementById('addSheet').classList.add('open');
+}
+function closeAdd() { document.getElementById('addSheet').classList.remove('open'); }
+function clearForm() {
+  ['urlInput','textInput','f_title','f_startDate','f_endDate','f_location','f_organizer','f_memo','f_url'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  hideStatus();
+}
+
+function saveEvent() {
+  const title = document.getElementById('f_title').value.trim();
+  if (!title) { alert('イベント名を入力してください'); return; }
+  const ev = {
+    id: editingId || Date.now().toString(),
+    title,
+    startDate: document.getElementById('f_startDate').value,
+    endDate: document.getElementById('f_endDate').value,
+    location: document.getElementById('f_location').value.trim(),
+    organizer: document.getElementById('f_organizer').value.trim(),
+    memo: document.getElementById('f_memo').value.trim(),
+    url: document.getElementById('f_url').value.trim(),
+    status: 'want',
+    createdAt: new Date().toISOString(),
+  };
+  if (editingId) {
+    const idx = events.findIndex(e => e.id === editingId);
+    if (idx >= 0) { ev.status = events[idx].status; ev.attendedDate = events[idx].attendedDate; ev.attendedMemo = events[idx].attendedMemo; events[idx] = ev; }
+  } else {
+    events.unshift(ev);
+  }
+  save(); closeAdd(); render();
+}
+
+// ── AI抽出 ──
+function showStatus(msg, type) {
+  const el = document.getElementById('aiStatus');
+  el.style.display = 'block'; el.className = `ai-status ${type}`; el.textContent = msg;
+}
+function hideStatus() { const el = document.getElementById('aiStatus'); if(el) el.style.display = 'none'; }
+
+async function callGemini(prompt) {
+  const key = getApiKey();
+  if (!key) { document.getElementById('apiWarning').style.display = 'block'; throw new Error('APIキー未設定'); }
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json' }
+    })
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'API Error'); }
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+  return JSON.parse(text.replace(/```json|```/g, '').trim());
+}
+
+const EXTRACT_PROMPT = (content) => `あなたはイベント情報を抽出する専門家です。以下のWebページの内容から、イベント・展覧会・公演などの情報を正確に抽出してJSONで返してください。
+
+【重要なルール】
+- titleは必ずページタイトルや見出しから「イベント名・展覧会名・公演名」を抜き出すこと。美術館名・施設名・サイト名はtitleに含めない。
+- 例：「没後20年 ナムジュン・パイク｜じゅげむ展｜ワタリウム美術館」→ title は「没後20年 ナムジュン・パイク｜じゅげむ展」
+- 日付は「会期」「開催期間」「開催日」と書かれた箇所を優先して読み取ること
+- locationは「会場」「開催場所」と書かれた箇所を優先。施設名＋住所があれば両方含める
+- 情報が見つからない場合のみ空文字にする
+- 日付はYYYY-MM-DD形式で返す
+
+【ページ内容】
+${content}
+
+【返却形式】JSONのみ返すこと。説明文・コードブロック不要。
+{
+  "title": "イベント名のみ（施設名は除く）",
+  "startDate": "YYYY-MM-DD",
+  "endDate": "YYYY-MM-DD（1日のみなら空文字）",
+  "location": "会場名",
+  "organizer": "主催者・入場料など"
+}`;
+
+async function extractFromUrl() {
+  const url = document.getElementById('urlInput').value.trim();
+  if (!url) { alert('URLを入力してください'); return; }
+  const btn = document.getElementById('extractBtn');
+  btn.disabled = true; btn.textContent = '…';
+  showStatus('⏳ AIがページを読み取り中...', 'loading');
+  try {
+    const key = getApiKey();
+    if (!key) { document.getElementById('apiWarning').style.display = 'block'; throw new Error('APIキー未設定'); }
+
+    // GeminiにURLを直接渡してページを読み込ませる（URL Contextツール使用）
+    const prompt = `次のURLのWebページにアクセスして、イベント・展覧会・公演などの情報を抽出してください。
+
+URL: ${url}
+
+【重要なルール】
+- titleは「イベント名・展覧会名・公演名」のみ。施設名・美術館名・サイト名はtitleに含めない
+- 例：「没後20年 ナムジュン・パイク｜じゅげむ展｜ワタリウム美術館」→ titleは「没後20年 ナムジュン・パイク｜じゅげむ展」
+- 日付は「会期」「開催期間」「開催日」と書かれた箇所を優先して読み取る
+- locationは「会場」「開催場所」の記載を優先する
+- 情報が見つからない場合のみ空文字にする
+- 日付はYYYY-MM-DD形式
+
+JSONのみ返すこと（説明文・コードブロック不要）:
+{
+  "title": "イベント名のみ",
+  "startDate": "YYYY-MM-DD",
+  "endDate": "YYYY-MM-DD（1日のみなら空文字）",
+  "location": "会場名",
+  "organizer": "主催者・入場料など"
+}`;
+
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ url_context: {} }]
+      })
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'API Error'); }
+    const data = await res.json();
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    const text = parts.map(p => p.text || '').join('');
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('情報の抽出に失敗しました。テキスト入力をお試しください');
+    const result = JSON.parse(jsonMatch[0]);
+    fillForm(result);
+    document.getElementById('f_url').value = url;
+    showStatus('✓ 情報を自動入力しました。内容を確認・修正してください', 'success');
+  } catch(e) {
+    showStatus(`⚠ 抽出に失敗しました: ${e.message}`, 'error');
+  }
+  btn.disabled = false; btn.textContent = 'AI抽出';
+}
+
+async function extractFromText() {
+  const text = document.getElementById('textInput').value.trim();
+  if (!text) { alert('テキストを貼り付けてください'); return; }
+  const btn = document.getElementById('extractTextBtn');
+  btn.disabled = true; btn.textContent = '抽出中…';
+  showStatus('⏳ テキストからイベント情報を抽出中...', 'loading');
+  try {
+    const result = await callGemini(EXTRACT_PROMPT(text));
+    fillForm(result);
+    showStatus('✓ 情報を自動入力しました。内容を確認・修正してください', 'success');
+  } catch(e) {
+    showStatus(`⚠ 抽出に失敗しました: ${e.message}`, 'error');
+  }
+  btn.disabled = false; btn.textContent = 'テキストからAI抽出';
+}
+
+function fillForm(data) {
+  if (data.title) document.getElementById('f_title').value = data.title;
+  if (data.startDate) document.getElementById('f_startDate').value = data.startDate;
+  if (data.endDate) document.getElementById('f_endDate').value = data.endDate;
+  if (data.location) document.getElementById('f_location').value = data.location;
+  if (data.organizer) document.getElementById('f_organizer').value = data.organizer;
+}
+
+// ── 詳細シート ──
+function openDetail(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  const dateStr = ev.startDate ? (ev.endDate && ev.endDate !== ev.startDate ? `${fmtDate(ev.startDate)}〜${fmtDate(ev.endDate)}` : fmtDate(ev.startDate)) : '日時未定';
+  const wantActive = ev.status !== 'attended' ? 'active-want' : '';
+  const attActive = ev.status === 'attended' ? 'active-attended' : '';
+  const attDateSection = ev.status === 'attended' ? `
+    <div class="detail-section">
+      <div class="detail-section-label">参加日</div>
+      <input class="form-input" type="date" id="d_attendedDate" value="${ev.attendedDate||''}" onchange="updateAttended('${id}', 'attendedDate', this.value)">
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-label">感想メモ</div>
+      <textarea class="form-input" id="d_attendedMemo" placeholder="一言感想..." onblur="updateAttended('${id}', 'attendedMemo', this.value)">${ev.attendedMemo||''}</textarea>
+    </div>` : '';
+
+  document.getElementById('detailBody').innerHTML = `
+    <div class="detail-hero">
+      <div class="detail-title">${escHtml(ev.title)}</div>
+      <div class="detail-metas">
+        <div class="detail-meta"><span class="detail-meta-icon">${svgCal()}</span> ${dateStr}</div>
+        ${ev.location ? `<div class="detail-meta"><span class="detail-meta-icon">${svgPin()}</span> ${escHtml(ev.location)}</div>` : ''}
+        ${ev.organizer ? `<div class="detail-meta"><span style="font-size:12px">📋</span> ${escHtml(ev.organizer)}</div>` : ''}
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-label">ステータス</div>
+      <div class="status-btns">
+        <button class="status-btn ${wantActive}" onclick="setStatus('${id}','want')">📌 行きたい</button>
+        <button class="status-btn ${attActive}" onclick="setStatus('${id}','attended')">✅ 参加済みにする</button>
+      </div>
+    </div>
+    ${attDateSection}
+    ${ev.memo ? `<div class="detail-section"><div class="detail-section-label">メモ</div><div class="memo-display">${escHtml(ev.memo)}</div></div>` : ''}
+    ${ev.url ? `<div class="detail-section"><div class="detail-section-label">リンク</div><a class="url-link" href="${escHtml(ev.url)}" target="_blank">🔗 イベントページを開く</a></div>` : ''}
+    <button class="btn-secondary" onclick="editEvent('${id}')">✏️ 編集</button>
+    <button class="btn-secondary" style="color:var(--text3); border-color:var(--border2); margin-top:6px" onclick="deleteEvent('${id}')">削除する</button>
+  `;
+  document.getElementById('detailSheet').classList.add('open');
+}
+function closeDetail() { document.getElementById('detailSheet').classList.remove('open'); }
+
+function setStatus(id, status) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  ev.status = status;
+  if (status === 'attended' && !ev.attendedDate) ev.attendedDate = new Date().toISOString().slice(0,10);
+  save(); render(); openDetail(id);
+}
+function updateAttended(id, field, value) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  ev[field] = value; save();
+}
+function editEvent(id) {
+  const ev = events.find(e => e.id === id);
+  closeDetail(); openAdd(ev);
+}
+function deleteEvent(id) {
+  if (!confirm('このイベントを削除しますか？')) return;
+  events = events.filter(e => e.id !== id);
+  save(); closeDetail(); render();
+}
+
+// ── 初期化 ──
+load(); render();
+</script>
+</body>
+</html>
