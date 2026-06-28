@@ -1,9 +1,42 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>イベント手帳</title>
+<script type="module">
+// ── Firebase 設定 ──
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-app.js";
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD7JfruaceMMzvTWqABipmIrTIK5cKla9Y",
+  authDomain: "event-techo.firebaseapp.com",
+  projectId: "event-techo",
+  storageBucket: "event-techo.firebasestorage.app",
+  messagingSenderId: "377485088870",
+  appId: "1:377485088870:web:7484a0fb6587765dce35a7"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const eventsCol = collection(db, 'events');
+
+// Firebaseへの保存・削除
+window.fbSave = async (ev) => {
+  await setDoc(doc(eventsCol, ev.id), { ...ev, updatedAt: serverTimestamp() });
+};
+window.fbDelete = async (id) => {
+  await deleteDoc(doc(eventsCol, id));
+};
+
+// リアルタイム同期：Firestoreの変更を即座に画面に反映
+onSnapshot(eventsCol, (snapshot) => {
+  window.events = snapshot.docs.map(d => d.data());
+  if (window.renderReady) window.render();
+});
+</script>
 <style>
   :root {
     --bg: #F7F5F0;
@@ -240,19 +273,24 @@
 </div>
 
 <script>
-// ── データ管理 ──
-const STORAGE_KEY = 'event-techo-v1';
+// ── データ管理（Firebase連携）──
 const API_KEY_STORAGE = 'gemini-api-key';
-let events = [];
+window.events = [];
 let currentTab = 'upcoming';
 let editingId = null;
+window.renderReady = false;
 
-function load() {
-  try { events = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { events = []; }
+// Firebaseへ保存（新規・更新どちらも）
+async function save(ev) {
+  try { await window.fbSave(ev); } catch(e) { alert('保存に失敗しました: ' + e.message); }
 }
-function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+// Firebaseから削除
+async function remove(id) {
+  try { await window.fbDelete(id); } catch(e) { alert('削除に失敗しました: ' + e.message); }
 }
+// eventsはwindow.eventsを参照するようにする
+Object.defineProperty(window, 'events', { get() { return this._events || []; }, set(v) { this._events = v; }, configurable: true });
+
 function getApiKey() { return localStorage.getItem(API_KEY_STORAGE) || ''; }
 function saveApiKey() {
   const k = document.getElementById('apiKeyInput').value.trim();
@@ -282,12 +320,12 @@ function isToday(ev) {
 }
 
 // ── 表示 ──
-function render() {
+window.render = function render() {
   const list = document.getElementById('eventList');
   let filtered;
-  const upcoming = events.filter(e => e.status !== 'attended' && !isEnded(e));
-  const attended = events.filter(e => e.status === 'attended');
-  const ended = events.filter(e => e.status !== 'attended' && isEnded(e));
+  const upcoming = window.events.filter(e => e.status !== 'attended' && !isEnded(e));
+  const attended = window.events.filter(e => e.status === 'attended');
+  const ended = window.events.filter(e => e.status !== 'attended' && isEnded(e));
 
   upcoming.sort((a,b) => (a.startDate||'9') < (b.startDate||'9') ? -1 : 1);
   attended.sort((a,b) => (b.attendedDate||b.startDate||'') < (a.attendedDate||a.startDate||'') ? -1 : 1);
@@ -367,9 +405,10 @@ function clearForm() {
   hideStatus();
 }
 
-function saveEvent() {
+async function saveEvent() {
   const title = document.getElementById('f_title').value.trim();
   if (!title) { alert('イベント名を入力してください'); return; }
+  const existing = editingId ? window.events.find(e => e.id === editingId) : null;
   const ev = {
     id: editingId || Date.now().toString(),
     title,
@@ -379,16 +418,13 @@ function saveEvent() {
     organizer: document.getElementById('f_organizer').value.trim(),
     memo: document.getElementById('f_memo').value.trim(),
     url: document.getElementById('f_url').value.trim(),
-    status: 'want',
-    createdAt: new Date().toISOString(),
+    status: existing ? existing.status : 'want',
+    attendedDate: existing ? (existing.attendedDate || '') : '',
+    attendedMemo: existing ? (existing.attendedMemo || '') : '',
+    createdAt: existing ? existing.createdAt : new Date().toISOString(),
   };
-  if (editingId) {
-    const idx = events.findIndex(e => e.id === editingId);
-    if (idx >= 0) { ev.status = events[idx].status; ev.attendedDate = events[idx].attendedDate; ev.attendedMemo = events[idx].attendedMemo; events[idx] = ev; }
-  } else {
-    events.unshift(ev);
-  }
-  save(); closeAdd(); render();
+  await save(ev);
+  closeAdd();
 }
 
 // ── AI抽出 ──
@@ -519,7 +555,7 @@ function fillForm(data) {
 
 // ── 詳細シート ──
 function openDetail(id) {
-  const ev = events.find(e => e.id === id);
+  const ev = window.events.find(e => e.id === id);
   if (!ev) return;
   const dateStr = ev.startDate ? (ev.endDate && ev.endDate !== ev.startDate ? `${fmtDate(ev.startDate)}〜${fmtDate(ev.endDate)}` : fmtDate(ev.startDate)) : '日時未定';
   const wantActive = ev.status !== 'attended' ? 'active-want' : '';
@@ -560,30 +596,33 @@ function openDetail(id) {
 }
 function closeDetail() { document.getElementById('detailSheet').classList.remove('open'); }
 
-function setStatus(id, status) {
-  const ev = events.find(e => e.id === id);
+async function setStatus(id, status) {
+  const ev = window.events.find(e => e.id === id);
   if (!ev) return;
-  ev.status = status;
-  if (status === 'attended' && !ev.attendedDate) ev.attendedDate = new Date().toISOString().slice(0,10);
-  save(); render(); openDetail(id);
+  const updated = { ...ev, status };
+  if (status === 'attended' && !ev.attendedDate) updated.attendedDate = new Date().toISOString().slice(0,10);
+  await save(updated);
+  openDetail(id);
 }
-function updateAttended(id, field, value) {
-  const ev = events.find(e => e.id === id);
+async function updateAttended(id, field, value) {
+  const ev = window.events.find(e => e.id === id);
   if (!ev) return;
-  ev[field] = value; save();
+  await save({ ...ev, [field]: value });
 }
 function editEvent(id) {
-  const ev = events.find(e => e.id === id);
+  const ev = window.events.find(e => e.id === id);
   closeDetail(); openAdd(ev);
 }
-function deleteEvent(id) {
+async function deleteEvent(id) {
   if (!confirm('このイベントを削除しますか？')) return;
-  events = events.filter(e => e.id !== id);
-  save(); closeDetail(); render();
+  await remove(id);
+  closeDetail();
 }
 
 // ── 初期化 ──
-load(); render();
+// Firebaseのリアルタイム同期が始まったらrenderを呼ぶ
+window.renderReady = true;
+render();
 </script>
 </body>
 </html>
