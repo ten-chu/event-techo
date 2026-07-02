@@ -501,48 +501,44 @@ async function extractFromUrl() {
   if (!url) { alert('URLを入力してください'); return; }
   const btn = document.getElementById('extractBtn');
   btn.disabled = true; btn.textContent = '…';
-  showStatus('⏳ AIがページを読み取り中...', 'loading');
+  showStatus('⏳ ページの内容を取得中...', 'loading');
   try {
-    const key = getApiKey();
-    if (!key) { document.getElementById('apiWarning').style.display = 'block'; throw new Error('APIキー未設定'); }
+    // URLのページ本文をCORSプロキシ経由で取得
+    let pageContent = '';
+    const proxies = [
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+      `https://corsproxy.io/?${encodeURIComponent(url)}`
+    ];
+    for (const proxyUrl of proxies) {
+      try {
+        const res = await fetch(proxyUrl);
+        if (res.ok) {
+          const html = await res.text();
+          pageContent = html
+            .replace(/<script[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[\s\S]*?<\/style>/gi, '')
+            .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+            .replace(/<header[\s\S]*?<\/header>/gi, '')
+            .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+            .replace(/<!--[\s\S]*?-->/g, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 5000);
+          if (pageContent.length > 100) break;
+        }
+      } catch(e) { continue; }
+    }
+    showStatus('⏳ AIがイベント情報を読み取り中...', 'loading');
+    const prompt = pageContent.length > 100
+      ? `URL: ${url}
 
-    // GeminiにURLを直接渡してページを読み込ませる（URL Contextツール使用）
-    const prompt = `次のURLのWebページにアクセスして、イベント・展覧会・公演などの情報を抽出してください。
+ページ本文:
+${pageContent}`
+      : `URL: ${url}
 
-URL: ${url}
-
-【重要なルール】
-- titleは「イベント名・展覧会名・公演名」のみ。施設名・美術館名・サイト名はtitleに含めない
-- 例：「没後20年 ナムジュン・パイク｜じゅげむ展｜ワタリウム美術館」→ titleは「没後20年 ナムジュン・パイク｜じゅげむ展」
-- 日付は「会期」「開催期間」「開催日」と書かれた箇所を優先して読み取る
-- locationは「会場」「開催場所」の記載を優先する
-- 情報が見つからない場合のみ空文字にする
-- 日付はYYYY-MM-DD形式
-
-JSONのみ返すこと（説明文・コードブロック不要）:
-{
-  "title": "イベント名のみ",
-  "startDate": "YYYY-MM-DD",
-  "endDate": "YYYY-MM-DD（1日のみなら空文字）",
-  "location": "会場名",
-  "organizer": "主催者・入場料など"
-}`;
-
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        tools: [{ url_context: {} }]
-      })
-    });
-    if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'API Error'); }
-    const data = await res.json();
-    const parts = data.candidates?.[0]?.content?.parts || [];
-    const text = parts.map(p => p.text || '').join('');
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('情報の抽出に失敗しました。テキスト入力をお試しください');
-    const result = JSON.parse(jsonMatch[0]);
+（ページ本文の取得ができませんでした。URLから読み取れる情報だけで抽出してください）`;
+    const result = await callGemini(EXTRACT_PROMPT(prompt));
     fillForm(result);
     document.getElementById('f_url').value = url;
     showStatus('✓ 情報を自動入力しました。内容を確認・修正してください', 'success');
