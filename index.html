@@ -439,7 +439,7 @@ async function callGemini(prompt) {
   const key = getApiKey();
   if (!key) { document.getElementById('apiWarning').style.display = 'block'; throw new Error('APIキー未設定'); }
   // 混雑時に備えて複数モデルを順番に試す
-  const models = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash'];
+  const models = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-3.1-flash-lite'];
   let lastError;
   for (const model of models) {
     try {
