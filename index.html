@@ -36,13 +36,10 @@ window.fbDelete = async (id) => {
 };
 
 // ── ログイン・ログアウト ──
-// ポップアップ方式はブラウザのプライバシー設定でブロックされやすいため、
-// ページ全体がGoogleのログイン画面に移動して戻ってくる「リダイレクト方式」を使う
 window.fbLogin = () => {
   signInWithPopup(auth, provider).catch((e) => {
-    // 自分でポップアップを閉じただけの場合はエラー表示しない
-    if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return;
-    alert('ログインに失敗しました: ' + e.message);
+    // デバッグ用：原因を特定するため、いったんすべてのエラーを表示する
+    alert('DEBUG: ' + e.code + ' / ' + e.message);
   });
 };
 window.fbLogout = () => signOut(auth);
