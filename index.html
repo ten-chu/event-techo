@@ -10,6 +10,7 @@
 // ── Firebase 設定 ──
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-app.js";
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-firestore.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD7JfruaceMMzvTWqABipmIrTIK5cKla9Y",
@@ -22,6 +23,8 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
 const eventsCol = collection(db, 'events');
 
 // Firebaseへの保存・削除
@@ -32,10 +35,35 @@ window.fbDelete = async (id) => {
   await deleteDoc(doc(eventsCol, id));
 };
 
-// リアルタイム同期：Firestoreの変更を即座に画面に反映
-onSnapshot(eventsCol, (snapshot) => {
-  window.events = snapshot.docs.map(d => d.data());
-  if (window.renderReady) window.render();
+// ── ログイン・ログアウト ──
+window.fbLogin = () => {
+  signInWithPopup(auth, provider).catch((e) => {
+    alert('ログインに失敗しました: ' + e.message);
+  });
+};
+window.fbLogout = () => signOut(auth);
+
+// リアルタイム同期は「ログインしている間だけ」購読する
+let unsubscribeEvents = null;
+
+onAuthStateChanged(auth, (user) => {
+  window.currentUser = user;
+
+  if (unsubscribeEvents) { unsubscribeEvents(); unsubscribeEvents = null; }
+
+  if (user) {
+    unsubscribeEvents = onSnapshot(eventsCol, (snapshot) => {
+      window.events = snapshot.docs.map(d => d.data());
+      if (window.renderReady) window.render();
+    }, (err) => {
+      console.error(err);
+      alert('データの読み込みに失敗しました: ' + err.message);
+    });
+  } else {
+    window.events = [];
+  }
+
+  if (window.onAuthStateReady) window.onAuthStateReady(user);
 });
 </script>
 <style>
@@ -163,14 +191,35 @@ onSnapshot(eventsCol, (snapshot) => {
 
   /* ── ボトムナビ風 追加ボタン ── */
   .fab { display: none; }
+
+  /* ── ログイン画面 ── */
+  .header, #eventList { display: none; }
+  .login-screen { display: none; position: fixed; inset: 0; z-index: 300; background: var(--bg); align-items: center; justify-content: center; padding: 24px; }
+  .login-box { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 32px 24px; text-align: center; max-width: 320px; width: 100%; }
+  .login-title { font-size: 22px; font-weight: 700; color: var(--accent-dark); margin-bottom: 10px; }
+  .login-title span { color: var(--accent); }
+  .login-desc { font-size: 13px; color: var(--text2); line-height: 1.7; margin-bottom: 20px; }
+  .btn-logout { background: transparent; color: var(--text3); border: none; font-size: 12px; cursor: pointer; padding: 6px 8px; }
 </style>
 </head>
 <body>
 
+<!-- ── ログイン画面 ── -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <div class="login-title">イベント<span>手帳</span></div>
+    <div class="login-desc">このアプリは本人専用です。<br>Googleアカウントでログインしてください。</div>
+    <button class="btn-primary" onclick="fbLogin()">Googleでログイン</button>
+  </div>
+</div>
+
 <div class="header">
   <div class="header-top">
     <div class="app-title">イベント<span>手帳</span></div>
-    <button class="btn-add" onclick="openAdd()">＋ 追加</button>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button class="btn-logout" onclick="fbLogout()">ログアウト</button>
+      <button class="btn-add" onclick="openAdd()">＋ 追加</button>
+    </div>
   </div>
   <div class="tabs">
     <button class="tab active" onclick="switchTab('upcoming')">予定中</button>
@@ -195,7 +244,7 @@ onSnapshot(eventsCol, (snapshot) => {
       <!-- API Key設定 -->
       <div id="apiWarning" class="api-warning" style="display:none">
         ⚡ Gemini APIキーが設定されていません。<br>
-        <a class="api-link" href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> で無料取得後、下に入力してください（ブラウザに保存されます）。
+        <a class="api-link" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a> で無料取得後、下に入力してください（ブラウザに保存されます）。
         <div style="margin-top:8px">
           <input class="form-input" id="apiKeyInput" type="password" placeholder="AIzaSy..." style="font-size:13px; padding:8px 10px;">
           <button class="btn-extract" onclick="saveApiKey()" style="margin-top:6px; width:100%; border-radius:6px; padding:9px;">保存</button>
@@ -291,6 +340,24 @@ async function remove(id) {
 }
 // eventsはwindow.eventsを参照するようにする
 Object.defineProperty(window, 'events', { get() { return this._events || []; }, set(v) { this._events = v; }, configurable: true });
+
+// ── ログイン状態に応じて画面を出し分け ──
+window.onAuthStateReady = function(user) {
+  const loginScreen = document.getElementById('loginScreen');
+  const header = document.querySelector('.header');
+  const list = document.getElementById('eventList');
+  if (user) {
+    loginScreen.style.display = 'none';
+    header.style.display = '';
+    list.style.display = '';
+  } else {
+    loginScreen.style.display = 'flex';
+    header.style.display = 'none';
+    list.style.display = 'none';
+    document.getElementById('addSheet').classList.remove('open');
+    document.getElementById('detailSheet').classList.remove('open');
+  }
+};
 
 function getApiKey() { return localStorage.getItem(API_KEY_STORAGE) || ''; }
 function saveApiKey() {
@@ -582,11 +649,11 @@ function openDetail(id) {
   const attDateSection = ev.status === 'attended' ? `
     <div class="detail-section">
       <div class="detail-section-label">参加日</div>
-      <input class="form-input" type="date" id="d_attendedDate" value="${ev.attendedDate||''}" onchange="updateAttended('${id}', 'attendedDate', this.value)">
+      <input class="form-input" type="date" id="d_attendedDate" value="${escHtml(ev.attendedDate||'')}" onchange="updateAttended('${id}', 'attendedDate', this.value)">
     </div>
     <div class="detail-section">
       <div class="detail-section-label">感想メモ</div>
-      <textarea class="form-input" id="d_attendedMemo" placeholder="一言感想..." onblur="updateAttended('${id}', 'attendedMemo', this.value)">${ev.attendedMemo||''}</textarea>
+      <textarea class="form-input" id="d_attendedMemo" placeholder="一言感想..." onblur="updateAttended('${id}', 'attendedMemo', this.value)">${escHtml(ev.attendedMemo||'')}</textarea>
     </div>` : '';
 
   document.getElementById('detailBody').innerHTML = `
@@ -607,7 +674,7 @@ function openDetail(id) {
     </div>
     ${attDateSection}
     ${ev.memo ? `<div class="detail-section"><div class="detail-section-label">メモ</div><div class="memo-display">${escHtml(ev.memo)}</div></div>` : ''}
-    ${ev.url ? `<div class="detail-section"><div class="detail-section-label">リンク</div><a class="url-link" href="${escHtml(ev.url)}" target="_blank">🔗 イベントページを開く</a></div>` : ''}
+    ${ev.url ? `<div class="detail-section"><div class="detail-section-label">リンク</div><a class="url-link" href="${escHtml(ev.url)}" target="_blank" rel="noopener noreferrer">🔗 イベントページを開く</a></div>` : ''}
     <button class="btn-secondary" onclick="editEvent('${id}')">✏️ 編集</button>
     <button class="btn-secondary" style="color:var(--text3); border-color:var(--border2); margin-top:6px" onclick="deleteEvent('${id}')">削除する</button>
   `;
