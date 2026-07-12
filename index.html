@@ -10,7 +10,7 @@
 // ── Firebase 設定 ──
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-app.js";
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-firestore.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD7JfruaceMMzvTWqABipmIrTIK5cKla9Y",
@@ -36,12 +36,17 @@ window.fbDelete = async (id) => {
 };
 
 // ── ログイン・ログアウト ──
+// ポップアップ方式はブラウザのプライバシー設定でブロックされやすいため、
+// ページ全体がGoogleのログイン画面に移動して戻ってくる「リダイレクト方式」を使う
 window.fbLogin = () => {
-  signInWithPopup(auth, provider).catch((e) => {
-    alert('ログインに失敗しました: ' + e.message);
-  });
+  signInWithRedirect(auth, provider);
 };
 window.fbLogout = () => signOut(auth);
+
+// リダイレクトでログイン画面から戻ってきた直後にエラーがあれば表示する
+getRedirectResult(auth).catch((e) => {
+  alert('ログインに失敗しました: ' + e.message);
+});
 
 // リアルタイム同期は「ログインしている間だけ」購読する
 let unsubscribeEvents = null;
